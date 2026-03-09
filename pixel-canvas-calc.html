@@ -270,45 +270,6 @@
     box-shadow: 1px 1px 0 #7a0030;
   }
 
-  /* ===== BASE SIDE SELECTOR ===== */
-  .base-panel {
-    padding: 20px;
-    grid-column: 1 / -1;
-  }
-
-  .toggle-row {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
-  .toggle-btn {
-    background: var(--grid);
-    border: 3px solid var(--dim);
-    color: var(--dim);
-    font-family: 'VT323', monospace;
-    font-size: 20px;
-    padding: 8px 20px;
-    cursor: pointer;
-    transition: none;
-    letter-spacing: 2px;
-  }
-
-  .toggle-btn.active {
-    border-color: var(--accent4);
-    color: var(--accent4);
-    background: rgba(255,204,0,0.08);
-    box-shadow: 3px 3px 0 #664400;
-    transform: translate(-1px, -1px);
-  }
-
-  .toggle-desc {
-    font-size: 16px;
-    color: var(--dim);
-    letter-spacing: 1px;
-  }
-
   /* ===== RESULTS ===== */
   .results-section {
     margin-top: 8px;
@@ -590,14 +551,7 @@
     margin-top: 2px;
   }
 
-  .mode-tag {
-    font-size: 14px;
-    background: rgba(0,180,255,0.12);
-    border: 2px solid var(--accent3);
-    color: var(--accent3);
-    padding: 2px 8px;
-    margin-left: 8px;
-  }
+
 </style>
 </head>
 <body>
@@ -638,18 +592,6 @@
       </div>
     </div>
 
-    <!-- BASE SIDE SELECTOR -->
-    <div class="px-box base-panel section-wrapper">
-      <div class="corner-tl"></div><div class="corner-tr"></div>
-      <div class="corner-bl"></div><div class="corner-br"></div>
-      <div class="section-label">BASE SIDE (16の倍数を当てはめる辺)</div>
-      <div class="toggle-row">
-        <button class="toggle-btn active" id="btnWidth" onclick="setBase('width')">WIDTH (横)</button>
-        <button class="toggle-btn" id="btnHeight" onclick="setBase('height')">HEIGHT (縦)</button>
-        <span class="toggle-desc">→ もう一方の辺を自動計算します</span>
-        <span class="mode-tag" id="modeTag">横辺モード</span>
-      </div>
-    </div>
 
   </div>
 
@@ -708,7 +650,6 @@ const PRESETS = [
 let state = {
   ratioW: 4,
   ratioH: 3,
-  base: 'width',   // 'width' | 'height'
   activePreset: 0,
   filter: 'all',
 };
@@ -736,13 +677,6 @@ function selectPreset(i) {
   render();
 }
 
-function setBase(b) {
-  state.base = b;
-  document.getElementById('btnWidth').classList.toggle('active', b === 'width');
-  document.getElementById('btnHeight').classList.toggle('active', b === 'height');
-  document.getElementById('modeTag').textContent = b === 'width' ? '横辺モード' : '縦辺モード';
-  render();
-}
 
 function setFilter(f) {
   state.filter = f;
@@ -752,20 +686,36 @@ function setFilter(f) {
 }
 
 // ===== CALC =====
+// 短辺(16の倍数)から両辺を求め、長辺が512超のものは除外
 function calcSizes() {
   const results = [];
+  const rW = state.ratioW, rH = state.ratioH;
+  const isLandscape = rW >= rH; // 横長または正方形なら横が長辺
+
   for (let v = 16; v <= 512; v += 16) {
     let w, h;
-    if (state.base === 'width') {
-      w = v;
-      h = (v / state.ratioW) * state.ratioH;
-    } else {
+    if (isLandscape) {
+      // 短辺 = 縦、長辺 = 横 → vを短辺(縦)に当てて横を求める
       h = v;
-      w = (v / state.ratioH) * state.ratioW;
+      w = (v / rH) * rW;
+    } else {
+      // 短辺 = 横、長辺 = 縦 → vを短辺(横)に当てて縦を求める
+      w = v;
+      h = (v / rW) * rH;
     }
-    const isValid = Number.isInteger(h) && Number.isInteger(w);
-    const isMultiple16 = isValid && (Math.round(h) % 16 === 0) && (Math.round(w) % 16 === 0);
-    results.push({ base: v, w: Math.round(w * 100) / 100, h: Math.round(h * 100) / 100, isValid, isMultiple16 });
+
+    // 長辺が512超は除外
+    const longSide = Math.max(w, h);
+    if (longSide > 512) continue;
+
+    const wRounded = Math.round(w * 100) / 100;
+    const hRounded = Math.round(h * 100) / 100;
+    const isValid = Number.isInteger(Math.round(w * 1000) / 1000) && Number.isInteger(Math.round(h * 1000) / 1000);
+    const wInt = Math.round(w), hInt = Math.round(h);
+    const isIntExact = Math.abs(w - wInt) < 0.001 && Math.abs(h - hInt) < 0.001;
+    const isMultiple16 = isIntExact && (wInt % 16 === 0) && (hInt % 16 === 0);
+
+    results.push({ base: v, w: wRounded, h: hRounded, isIntExact, isMultiple16 });
   }
   return results;
 }
@@ -818,10 +768,9 @@ function renderRatioVis() {
 function render() {
   const rW = state.ratioW, rH = state.ratioH;
   document.getElementById('previewRatio').textContent = `${rW} : ${rH}`;
-  const baseLabel = state.base === 'width' ? '横幅' : '縦幅';
-  const calcLabel = state.base === 'width' ? '高さ' : '横幅';
+  const isLandscape = rW >= rH;
   document.getElementById('previewHint').textContent =
-    `16の倍数(16〜512)を${baseLabel}として、${calcLabel}を計算`;
+    `短辺(16〜512)を基準に両辺を計算 / 長辺512px以下のみ表示`;
   document.getElementById('frameCount').textContent = `RATIO: ${rW}:${rH}`;
   renderRatioVis();
 
@@ -835,38 +784,29 @@ function render() {
 
   filtered.forEach(item => {
     const card = document.createElement('div');
-    card.className = 'result-card' + (!item.isValid ? ' non-integer' : '');
+    card.className = 'result-card' + (!item.isIntExact ? ' non-integer' : '');
 
-    const baseVal = item.base;
-    const calcVal = state.base === 'width' ? item.h : item.w;
-    const wVal = state.base === 'width' ? item.w : item.w;
-    const hVal = state.base === 'width' ? item.h : item.h;
-
-    const baseLabel = state.base === 'width' ? 'W' : 'H';
-    const calcLabel = state.base === 'width' ? 'H' : 'W';
-
-    const isCalcInt = Number.isInteger(calcVal);
-    const isCalcMul16 = isCalcInt && (Math.round(calcVal) % 16 === 0);
+    const wInt = Math.round(item.w), hInt = Math.round(item.h);
+    const wDisp = item.isIntExact ? wInt : Math.floor(item.w * 10) / 10;
+    const hDisp = item.isIntExact ? hInt : Math.floor(item.h * 10) / 10;
 
     let warnHtml = '';
-    if (!isCalcInt) {
+    if (!item.isIntExact) {
       warnHtml = `<div class="warn-badge">⚠ 非整数</div>`;
-    } else if (!isCalcMul16) {
+    } else if (!item.isMultiple16) {
       warnHtml = `<div class="warn-badge">▲ ×16外</div>`;
     }
 
     card.innerHTML = `
-      <div class="base-val">${baseLabel}: ${baseVal}</div>
-      <div class="arrow">↓</div>
-      <div class="calc-val">${calcLabel}: ${isCalcInt ? Math.round(calcVal) : calcVal.toFixed(2)}</div>
-      <div class="dims">${Math.round(wVal * 100) / 100} × ${Math.round(hVal * 100) / 100}</div>
-      <div class="px-label">px</div>
+      <div class="base-val">W: ${wDisp}</div>
+      <div class="arrow">×</div>
+      <div class="calc-val">H: ${hDisp}</div>
       ${warnHtml}
     `;
 
-    if (item.isValid) {
-      card.title = `クリックでコピー: ${Math.round(wVal)} × ${Math.round(hVal)}`;
-      card.onclick = () => copySize(Math.round(wVal), Math.round(hVal));
+    if (item.isIntExact) {
+      card.title = `クリックでコピー: ${wInt} × ${hInt}`;
+      card.onclick = () => copySize(wInt, hInt);
     }
 
     grid.appendChild(card);
